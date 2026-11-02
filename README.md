@@ -1,6 +1,12 @@
-# Nuestra Mirada V2 — prueba de IA integrada
+# Nuestra Mirada V3 — prueba de IA y visor con gestos
 
 Proyecto Android Kotlin + Jetpack Compose. Esta versión incorpora una primera integración experimental de **Real-ESRGAN x4plus** mediante TensorFlow Lite.
+
+## Visor de fotografías
+
+- Deslizar a la izquierda muestra la siguiente fotografía seleccionada.
+- Deslizar a la derecha muestra la fotografía anterior.
+- Deslizar hacia abajo cierra el visor y vuelve a la galería.
 
 ## Prueba de IA
 
@@ -26,4 +32,4 @@ Licencia indicada para el modelo: BSD-3-Clause. Revisar los avisos de licencia d
 
 ## Compilación
 
-GitHub Actions ejecuta `gradle assembleDebug` con JDK 17 y Gradle 8.13. El artefacto se publica como `nuestra-mirada-v2-debug-apk`.
+GitHub Actions ejecuta `gradle assembleDebug` con JDK 17 y Gradle 8.13. El artefacto se publica como `nuestra-mirada-v3-debug-apk`.

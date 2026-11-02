@@ -9,6 +9,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -30,6 +31,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -38,6 +41,7 @@ import coil.compose.AsyncImage
 import com.nuestramirada.gallery.ai.AIEngine
 import kotlinx.coroutines.launch
 import java.io.File
+import kotlin.math.abs
 
 private val Blue = Color(0xFF7560E8)
 private val Ink = Color(0xFF171522)
@@ -121,7 +125,7 @@ fun NuestraMiradaApp() {
                     }
                 }
             }
-            selected != null -> PhotoViewer(uri = selected!!, onBack = { selected = null }, onEnhance = { enhanceTarget = it })
+            selected != null -> PhotoViewer(photos = photos.toList(), uri = selected!!, onSelect = { selected = it }, onBack = { selected = null }, onEnhance = { enhanceTarget = it })
             else -> Scaffold(
                 topBar = { TopAppBar(title = { Column { Text("Nuestra Mirada", fontWeight = FontWeight.Bold, fontSize = 21.sp); Text("Captura. Explora. Mejora.", color = Color.Gray, fontSize = 12.sp) } }, actions = {
                     IconButton(onClick = { picker.launch("image/*") }) { Icon(Icons.Default.AddPhotoAlternate, "Añadir fotografías") }
@@ -154,13 +158,92 @@ private fun EmptyGallery(onAdd: () -> Unit) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun PhotoViewer(uri: Uri, onBack: () -> Unit, onEnhance: (Uri) -> Unit) {
-    Scaffold(topBar = { TopAppBar(title = { Text("Fotografía") }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Volver") } }) }, bottomBar = {
-        Surface(shadowElevation = 6.dp) { Row(Modifier.fillMaxWidth().padding(14.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            OutlinedButton(onClick = {}, modifier = Modifier.weight(1f)) { Icon(Icons.Default.FavoriteBorder, null); Text(" Favorito") }
-            Button(onClick = { onEnhance(uri) }, modifier = Modifier.weight(1.4f)) { Icon(Icons.Default.AutoAwesome, null); Text(" Mejorar IA") }
-        } }
-    }) { padding -> Box(Modifier.fillMaxSize().padding(padding).background(Color(0xFF101018)), contentAlignment = Alignment.Center) {
-        AsyncImage(model = uri, contentDescription = "Fotografía", contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize())
-    } }
+private fun PhotoViewer(
+    photos: List<Uri>,
+    uri: Uri,
+    onSelect: (Uri) -> Unit,
+    onBack: () -> Unit,
+    onEnhance: (Uri) -> Unit
+) {
+    val currentIndex = photos.indexOf(uri).coerceAtLeast(0)
+    val density = LocalDensity.current
+    val swipeThresholdPx = with(density) { 64.dp.toPx() }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Fotografía ${currentIndex + 1} de ${photos.size}") },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.Default.ArrowBack, "Volver")
+                    }
+                }
+            )
+        },
+        bottomBar = {
+            Surface(shadowElevation = 6.dp) {
+                Row(
+                    Modifier.fillMaxWidth().padding(14.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    OutlinedButton(onClick = {}, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Default.FavoriteBorder, null)
+                        Text(" Favorito")
+                    }
+                    Button(onClick = { onEnhance(uri) }, modifier = Modifier.weight(1.4f)) {
+                        Icon(Icons.Default.AutoAwesome, null)
+                        Text(" Mejorar IA")
+                    }
+                }
+            }
+        }
+    ) { padding ->
+        Box(
+            Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .background(Color(0xFF101018))
+                .pointerInput(uri, photos.size) {
+                    var dragX = 0f
+                    var dragY = 0f
+                    detectDragGestures(
+                        onDragStart = {
+                            dragX = 0f
+                            dragY = 0f
+                        },
+                        onDragEnd = {
+                            when {
+                                dragY > swipeThresholdPx && dragY > abs(dragX) -> onBack()
+                                abs(dragX) > swipeThresholdPx && abs(dragX) > abs(dragY) -> {
+                                    if (dragX < 0 && currentIndex < photos.lastIndex) {
+                                        onSelect(photos[currentIndex + 1])
+                                    } else if (dragX > 0 && currentIndex > 0) {
+                                        onSelect(photos[currentIndex - 1])
+                                    }
+                                }
+                            }
+                        },
+                        onDrag = { change, amount ->
+                            change.consume()
+                            dragX += amount.x
+                            dragY += amount.y
+                        }
+                    )
+                },
+            contentAlignment = Alignment.Center
+        ) {
+            AsyncImage(
+                model = uri,
+                contentDescription = "Fotografía",
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.fillMaxSize()
+            )
+            Text(
+                "Desliza a los lados para cambiar de foto · hacia abajo para salir",
+                color = Color.White.copy(alpha = 0.72f),
+                fontSize = 11.sp,
+                modifier = Modifier.align(Alignment.BottomCenter).padding(12.dp)
+            )
+        }
+    }
 }
