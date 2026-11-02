@@ -1,7 +1,9 @@
 package com.nuestramirada.gallery
 
+import android.content.ContentValues
 import android.net.Uri
 import android.os.Bundle
+import android.provider.MediaStore
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -18,8 +20,7 @@ import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Collections
-import androidx.compose.material.icons.filled.Image
-import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -32,11 +33,15 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.lifecycleScope
 import coil.compose.AsyncImage
+import com.nuestramirada.gallery.ai.AIEngine
+import kotlinx.coroutines.launch
+import java.io.File
 
-private val Ink = Color(0xFF17191C)
-private val Blue = Color(0xFF2864DC)
-private val SurfaceSoft = Color(0xFFF3F5F8)
+private val Blue = Color(0xFF7560E8)
+private val Ink = Color(0xFF171522)
+private val Soft = Color(0xFFF3F1FA)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -51,204 +56,111 @@ fun NuestraMiradaApp() {
     val context = LocalContext.current
     val photos = remember { mutableStateListOf<Uri>() }
     var selected by remember { mutableStateOf<Uri?>(null) }
-    var showInfo by remember { mutableStateOf(false) }
-
-    val picker = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetMultipleContents()
-    ) { chosen ->
-        chosen.forEach { uri -> if (!photos.contains(uri)) photos.add(uri) }
+    var enhanceTarget by remember { mutableStateOf<Uri?>(null) }
+    var enhancedFile by remember { mutableStateOf<File?>(null) }
+    var progress by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    var advanced by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { chosen ->
+        chosen.forEach { if (!photos.contains(it)) photos.add(it) }
     }
+    val engine = remember { AIEngine(context.applicationContext) }
 
-    MaterialTheme(
-        colorScheme = lightColorScheme(
-            primary = Blue,
-            onPrimary = Color.White,
-            background = Color.White,
-            surface = Color.White,
-            onSurface = Ink
-        )
-    ) {
-        if (selected != null) {
-            PhotoViewer(
-                uri = selected!!,
-                onBack = { selected = null },
-                onEnhance = { showInfo = true }
-            )
-        } else {
-            Scaffold(
-                containerColor = Color.White,
-                topBar = {
-                    TopAppBar(
-                        title = {
-                            Column {
-                                Text("Nuestra Mirada", fontWeight = FontWeight.Bold, fontSize = 21.sp)
-                                Text("Tus recuerdos, en un solo lugar", color = Color.Gray, fontSize = 12.sp)
+    MaterialTheme(colorScheme = lightColorScheme(primary = Blue, onPrimary = Color.White, background = Color.White, surface = Color.White)) {
+        when {
+            enhanceTarget != null -> {
+                Scaffold(topBar = { TopAppBar(title = { Text("Nuestra Mirada AI", fontWeight = FontWeight.Bold) }, navigationIcon = {
+                    IconButton(onClick = { enhanceTarget = null; enhancedFile = null; error = null }) { Icon(Icons.Default.ArrowBack, "Volver") }
+                }) }) { padding ->
+                    Column(Modifier.fillMaxSize().padding(padding).padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(if (advanced) "Modo avanzado" else "Mejora automática", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                        Text("Real-ESRGAN x4plus · procesamiento local", color = Color.Gray, fontSize = 12.sp)
+                        Spacer(Modifier.height(14.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FilterChip(selected = !advanced, onClick = { advanced = false }, label = { Text("Automático") })
+                            FilterChip(selected = advanced, onClick = { advanced = true }, label = { Text("Avanzado") })
+                        }
+                        Spacer(Modifier.height(12.dp))
+                        Box(Modifier.fillMaxWidth().weight(1f).clip(RoundedCornerShape(22.dp)).background(Color(0xFF171522)), contentAlignment = Alignment.Center) {
+                            AsyncImage(model = enhancedFile ?: enhanceTarget, contentDescription = "Vista previa", contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize())
+                        }
+                        Spacer(Modifier.height(14.dp))
+                        if (advanced) {
+                            Text("Primera prueba: superresolución 4× con el modelo Real-ESRGAN. Los controles adicionales se habilitarán cuando validemos el modelo.", color = Color.Gray, fontSize = 12.sp)
+                            Spacer(Modifier.height(8.dp))
+                        }
+                        if (progress.isNotBlank()) Text(progress, color = Blue, fontSize = 13.sp)
+                        error?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 13.sp) }
+                        if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+                        Spacer(Modifier.height(10.dp))
+                        Button(onClick = {
+                            val uri = enhanceTarget ?: return@Button
+                            busy = true; error = null; enhancedFile = null
+                            scope.launch {
+                                val result = engine.enhance(uri) { stage -> progress = stage }
+                                result.onSuccess { enhancedFile = it; progress = "IA terminada: salida de prueba 4×" }
+                                    .onFailure { error = it.message ?: "Falló el procesamiento del modelo."; progress = "Prueba fallida" }
+                                busy = false
                             }
-                        },
-                        actions = {
-                            IconButton(onClick = { picker.launch("image/*") }) {
-                                Icon(Icons.Default.AddPhotoAlternate, contentDescription = "Añadir fotos")
-                            }
-                            IconButton(onClick = { showInfo = true }) {
-                                Icon(Icons.Default.MoreVert, contentDescription = "Más información")
-                            }
-                        },
-                        colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.White)
-                    )
-                },
-                floatingActionButton = {
-                    ExtendedFloatingActionButton(
-                        onClick = { picker.launch("image/*") },
-                        containerColor = Blue,
-                        contentColor = Color.White,
-                        icon = { Icon(Icons.Default.AddPhotoAlternate, null) },
-                        text = { Text("Añadir fotos") }
-                    )
-                },
-                bottomBar = {
-                    NavigationBar(containerColor = Color.White) {
-                        NavigationBarItem(
-                            selected = true,
-                            onClick = {},
-                            icon = { Icon(Icons.Default.PhotoLibrary, null) },
-                            label = { Text("Galería") }
-                        )
-                        NavigationBarItem(
-                            selected = false,
-                            onClick = { showInfo = true },
-                            icon = { Icon(Icons.Default.AutoAwesome, null) },
-                            label = { Text("Mejorar") }
-                        )
-                    }
-                }
-            ) { padding ->
-                Column(
-                    modifier = Modifier.fillMaxSize().padding(padding)
-                        .background(Color.White)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Fotografías", fontSize = 19.sp, fontWeight = FontWeight.SemiBold)
-                        Text("${photos.size} seleccionadas", color = Color.Gray, fontSize = 12.sp)
-                    }
-
-                    if (photos.isEmpty()) {
-                        EmptyGallery(onAdd = { picker.launch("image/*") })
-                    } else {
-                        LazyVerticalGrid(
-                            columns = GridCells.Fixed(3),
-                            contentPadding = PaddingValues(3.dp),
-                            horizontalArrangement = Arrangement.spacedBy(3.dp),
-                            verticalArrangement = Arrangement.spacedBy(3.dp)
-                        ) {
-                            items(photos) { uri ->
-                                AsyncImage(
-                                    model = uri,
-                                    contentDescription = "Fotografía",
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .aspectRatio(1f)
-                                        .clip(RoundedCornerShape(5.dp))
-                                        .clickable { selected = uri }
-                                )
-                            }
+                        }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
+                            Icon(Icons.Default.AutoAwesome, null); Spacer(Modifier.width(8.dp)); Text(if (busy) "Procesando…" else if (enhancedFile == null) "Ejecutar IA" else "Volver a procesar")
+                        }
+                        if (enhancedFile != null) {
+                            OutlinedButton(onClick = {
+                                scope.launch {
+                                    runCatching {
+                                        val values = ContentValues().apply { put(MediaStore.Images.Media.DISPLAY_NAME, "NuestraMirada_IA_${System.currentTimeMillis()}.png"); put(MediaStore.Images.Media.MIME_TYPE, "image/png"); put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/NuestraMirada") }
+                                        val dest = context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: error("No se pudo crear el archivo en Galería")
+                                        context.contentResolver.openOutputStream(dest)?.use { out -> enhancedFile!!.inputStream().use { it.copyTo(out) } } ?: error("No se pudo guardar")
+                                    }.onSuccess { progress = "Fotografía guardada en Pictures/NuestraMirada" }.onFailure { error = it.message }
+                                }
+                            }, modifier = Modifier.fillMaxWidth()) { Text("Guardar resultado en Galería") }
                         }
                     }
                 }
             }
-        }
-
-        if (showInfo) {
-            AlertDialog(
-                onDismissRequest = { showInfo = false },
-                title = { Text("Mejora con inteligencia artificial") },
-                text = {
-                    Text(
-                        "El motor de superresolución local está en desarrollo. " +
-                        "Esta versión permite seleccionar y visualizar fotografías; " +
-                        "todavía no aplica una mejora por IA."
-                    )
-                },
-                confirmButton = {
-                    TextButton(onClick = { showInfo = false }) { Text("Entendido") }
+            selected != null -> PhotoViewer(uri = selected!!, onBack = { selected = null }, onEnhance = { enhanceTarget = it })
+            else -> Scaffold(
+                topBar = { TopAppBar(title = { Column { Text("Nuestra Mirada", fontWeight = FontWeight.Bold, fontSize = 21.sp); Text("Captura. Explora. Mejora.", color = Color.Gray, fontSize = 12.sp) } }, actions = {
+                    IconButton(onClick = { picker.launch("image/*") }) { Icon(Icons.Default.AddPhotoAlternate, "Añadir fotografías") }
+                }) },
+                floatingActionButton = { ExtendedFloatingActionButton(onClick = { picker.launch("image/*") }, containerColor = Blue, contentColor = Color.White, icon = { Icon(Icons.Default.AddPhotoAlternate, null) }, text = { Text("Añadir fotos") }) },
+                bottomBar = { NavigationBar { NavigationBarItem(selected = true, onClick = {}, icon = { Icon(Icons.Default.PhotoLibrary, null) }, label = { Text("Galería") }); NavigationBarItem(selected = false, onClick = { photos.lastOrNull()?.let { enhanceTarget = it } }, icon = { Icon(Icons.Default.AutoAwesome, null) }, label = { Text("Mejorar") }) } }
+            ) { padding ->
+                Column(Modifier.fillMaxSize().padding(padding).background(Color.White)) {
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Fotografías", fontSize = 19.sp, fontWeight = FontWeight.SemiBold); Text("${photos.size} cargadas", color = Color.Gray, fontSize = 12.sp)
+                    }
+                    if (photos.isEmpty()) EmptyGallery { picker.launch("image/*") }
+                    else LazyVerticalGrid(columns = GridCells.Fixed(3), contentPadding = PaddingValues(3.dp), horizontalArrangement = Arrangement.spacedBy(3.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        items(photos) { uri -> AsyncImage(model = uri, contentDescription = "Fotografía", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(7.dp)).clickable { selected = uri }) }
+                    }
                 }
-            )
+            }
         }
     }
 }
 
 @Composable
 private fun EmptyGallery(onAdd: () -> Unit) {
-    Column(
-        modifier = Modifier.fillMaxSize().padding(28.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Surface(
-            shape = RoundedCornerShape(28.dp),
-            color = SurfaceSoft,
-            modifier = Modifier.size(104.dp)
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(Icons.Default.Collections, null, tint = Blue, modifier = Modifier.size(48.dp))
-            }
-        }
-        Spacer(Modifier.height(20.dp))
-        Text("Tu galería comienza aquí", fontSize = 20.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(8.dp))
-        Text(
-            "Selecciona fotografías de tu teléfono para verlas en Nuestra Mirada.",
-            color = Color.Gray,
-            fontSize = 14.sp
-        )
-        Spacer(Modifier.height(20.dp))
-        Button(onClick = onAdd) { Text("Seleccionar fotografías") }
+    Column(Modifier.fillMaxSize().padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+        Icon(Icons.Default.Collections, null, tint = Blue, modifier = Modifier.size(64.dp)); Spacer(Modifier.height(16.dp))
+        Text("Tu galería comienza aquí", fontSize = 20.sp, fontWeight = FontWeight.Bold); Text("Selecciona fotografías para probar la mejora con IA.", color = Color.Gray)
+        Spacer(Modifier.height(18.dp)); Button(onClick = onAdd) { Text("Seleccionar fotografías") }
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun PhotoViewer(uri: Uri, onBack: () -> Unit, onEnhance: () -> Unit) {
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Fotografía") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Volver")
-                    }
-                }
-            )
-        },
-        bottomBar = {
-            Surface(shadowElevation = 6.dp, color = Color.White) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(16.dp),
-                    horizontalArrangement = Arrangement.Center
-                ) {
-                    Button(onClick = onEnhance, modifier = Modifier.fillMaxWidth()) {
-                        Icon(Icons.Default.AutoAwesome, null)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Mejorar con IA")
-                    }
-                }
-            }
-        }
-    ) { padding ->
-        Box(
-            modifier = Modifier.fillMaxSize().padding(padding).background(Color(0xFFF4F4F4)),
-            contentAlignment = Alignment.Center
-        ) {
-            AsyncImage(
-                model = uri,
-                contentDescription = "Fotografía seleccionada",
-                contentScale = ContentScale.Fit,
-                modifier = Modifier.fillMaxWidth().fillMaxHeight()
-            )
-        }
-    }
+private fun PhotoViewer(uri: Uri, onBack: () -> Unit, onEnhance: (Uri) -> Unit) {
+    Scaffold(topBar = { TopAppBar(title = { Text("Fotografía") }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Volver") } }) }, bottomBar = {
+        Surface(shadowElevation = 6.dp) { Row(Modifier.fillMaxWidth().padding(14.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            OutlinedButton(onClick = {}, modifier = Modifier.weight(1f)) { Icon(Icons.Default.FavoriteBorder, null); Text(" Favorito") }
+            Button(onClick = { onEnhance(uri) }, modifier = Modifier.weight(1.4f)) { Icon(Icons.Default.AutoAwesome, null); Text(" Mejorar IA") }
+        } }
+    }) { padding -> Box(Modifier.fillMaxSize().padding(padding).background(Color(0xFF101018)), contentAlignment = Alignment.Center) {
+        AsyncImage(model = uri, contentDescription = "Fotografía", contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize())
+    } }
 }

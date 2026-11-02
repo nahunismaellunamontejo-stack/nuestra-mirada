@@ -1,30 +1,29 @@
-# Nuestra Mirada — Android 0.1.0
+# Nuestra Mirada V2 — prueba de IA integrada
 
-Galería Android inicial con interfaz clara inspirada en Samsung One UI.
+Proyecto Android Kotlin + Jetpack Compose. Esta versión incorpora una primera integración experimental de **Real-ESRGAN x4plus** mediante TensorFlow Lite.
 
-## Incluye
-- Aplicación Android con Kotlin y Jetpack Compose.
-- Selector de fotografías del sistema (Photo Picker / GetMultipleContents).
-- Cuadrícula de imágenes seleccionadas.
-- Visor de fotografía.
-- Estructura inicial `AIEngine` para integrar superresolución local más adelante.
-- Workflow de GitHub Actions para compilar una APK de depuración en la nube.
+## Prueba de IA
 
-## Importante
-Esta versión **todavía no incorpora un modelo de IA**. El botón "Mejorar con IA" informa que el motor está en desarrollo. No aplica filtros ni afirma mejorar imágenes.
+- Al pulsar **Mejorar IA**, la aplicación descarga bajo demanda el modelo (aprox. 64 MB) desde el repositorio público de modelos PixelLift en Hugging Face.
+- Verifica tamaño y SHA-256 antes de usarlo.
+- Ejecuta TensorFlow Lite localmente en el teléfono; la fotografía seleccionada no se envía a un servidor.
+- Esta primera prueba procesa un recorte cuadrado de 128×128 y genera una salida de 512×512. Es una prueba de integración del modelo, no todavía el procesamiento por mosaicos de fotografías completas.
+- El modo automático y el avanzado ya abren el flujo de inferencia. Los controles avanzados adicionales se implementarán después de validar la inferencia.
+- El resultado puede guardarse en `Pictures/NuestraMirada`.
 
-## Compilar en GitHub Actions
-1. Crea un repositorio vacío en GitHub.
-2. Sube el contenido de este proyecto a la rama `main`.
-3. Abre la pestaña **Actions**.
-4. Ejecuta **Build Nuestra Mirada APK** o espera a que termine el flujo tras subir cambios.
-5. Descarga el artefacto `nuestra-mirada-debug-apk`.
-6. Extrae `app-debug.apk` e instálalo en Android.
+Modelo: `real_esrgan_x4plus_f32.tflite` (exportación float32, entrada 1×128×128×3, salida 1×512×512×3). El archivo se descarga en el primer uso, no está incluido dentro del APK.
 
-## Requisitos
-- JDK 17.
-- Android SDK Platform 36 en el runner.
-- Gradle 8.13 o compatible con Android Gradle Plugin 8.9.1.
+Repositorio del modelo y metadatos: https://huggingface.co/Mogfbkx/pixellift-models
 
-## Próxima etapa
-Validar un modelo real de superresolución (por ejemplo una conversión compatible de Real-ESRGAN) y medir memoria, tiempo y aceleración en el Galaxy S20 FE. No basta con renombrar un archivo `.pth` a `.tflite`.
+Licencia indicada para el modelo: BSD-3-Clause. Revisar los avisos de licencia del repositorio antes de distribuir públicamente la aplicación.
+
+## Limitaciones conocidas de esta primera prueba
+
+- El Snapdragon 865 del Galaxy S20 FE no aparece entre los dispositivos oficialmente validados por Qualcomm para este modelo. La inferencia usa CPU TensorFlow Lite inicialmente; rendimiento, memoria y estabilidad deben medirse en el dispositivo real.
+- La primera prueba no conserva la relación de aspecto completa ni procesa toda la imagen por mosaicos; se usa para confirmar descarga, carga del modelo e inferencia 4×.
+- Si la descarga, la validación, la forma de tensores o la inferencia fallan, la aplicación mostrará el error para poder corregirlo.
+- La galería de esta compilación todavía usa el selector del sistema; la consulta automática completa a MediaStore y la persistencia de la biblioteca siguen pendientes de integrar.
+
+## Compilación
+
+GitHub Actions ejecuta `gradle assembleDebug` con JDK 17 y Gradle 8.13. El artefacto se publica como `nuestra-mirada-v2-debug-apk`.

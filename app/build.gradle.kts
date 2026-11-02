@@ -39,6 +39,7 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.compose.foundation:foundation")
     implementation("io.coil-kt:coil-compose:2.7.0")
+    implementation("org.tensorflow:tensorflow-lite:2.17.0")
     implementation("androidx.compose.runtime:runtime")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
